@@ -1,0 +1,55 @@
+import yfinance as yf
+from mlfinlab.optimal_mean_reversion import OrnsteinUhlenbeck
+import numpy as np
+
+class team2(QCAlgorithm):
+    def Initialize(self):
+        self.SetStartDate(2020, 6, 26)  # Set Start Date
+        self.SetCash(100000000)  # Set Strategy Cash
+        #
+        self.HRL = self.AddEquity("HRL", Resolution.Daily)
+        self.AAL = self.AddEquity("AAL", Resolution.Daily)
+        self.DAL = self.AddEquity("DAL", Resolution.Daily)
+        
+        history = self.History(qb.Securities.Keys, 365, Resolution.Daily)
+        hrl_daily_close = history.loc['hrl']['close']
+        aal_daily_close = history.loc['aal']['close']
+        dal_daily_close = history.loc['dal']['close']
+        
+        data_train = np.array([aal_daily_close], [dal_daily_close])
+        data_oos = np.array([aal_daily_close], [dal_daily_close])
+        
+        example = OrnsteinUhlenbeck()
+        example.fit(data_train, data_frequency="D", discount_rate=0.5, transaction_cost=0, stop_loss=0.5)
+       
+        self.SetWarmUp(10)
+        #place trade for HRL 120 min after market opens
+        self.Schedule.On(self.DateRules.EveryDay(), self.TimeRules.AfterMarketOpen('HRL', 120), self.daily_check)
+
+    def daily_check(self):
+        if self.IsWarmingUp:
+            return
+        
+        #checks optimal levels
+        example.description()
+
+        if example.optimal_entry_level() > :
+            aal_wt = 
+            dal_wt = 
+            self.SetHoldings("AAL", aal_wt)
+            self.SetHoldings("DAL", -dal_wt)
+        elif example.optimal_liquidation_level() > :
+            aal_wt = 
+            dal_wt = 
+            self.SetHoldings("AAL", -aal_wt)
+            self.SetHoldings("DAL", dal_wt)
+        else:
+            self.SetHoldings("HRL", 0.1)
+            
+       
+    self.Liquidate("HRL")
+        self.Liquidate("AAL")
+        self.Liquidate("DAL")
+       
+        #retrain model
+        example.fit_to_assets(data_oos)

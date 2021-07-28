@@ -1,0 +1,13 @@
+# QuantBook Analysis Tool 
+# For more information see [https://www.quantconnect.com/docs/research/overview]
+qb = QuantBook()
+qb.hrl = qb.AddEquity("HRL", Resolution.Daily)
+history = qb.History(qb.Securities.Keys, 360, Resolution.Daily)
+hrl_close = history.loc['hrl']['close']
+
+# Indicator Analysis
+hrl_sma = qb.SMA("hrl", 60, Resolution.Daily)
+#hrl_close.plot()
+hrl_close.rolling(window=21).mean().plot
+
+print(hrl_sma)

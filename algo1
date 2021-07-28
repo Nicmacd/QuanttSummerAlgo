@@ -2,7 +2,7 @@ import mlfinlab as ml
 import numpy as np
 
 class team2(QCAlgorithm):
-
+    
     def Initialize(self):
         self.SetStartDate(2020, 6, 26)  # Set Start Date
         self.SetCash(100000000)  # Set Strategy Cash
@@ -14,47 +14,66 @@ class team2(QCAlgorithm):
         
         #setting indicators
         #simple moving average
-        self.smaAAL = self.SMA("AAL", 60, Resolution.Daily)
-        self.smaDAL = self.SMA("DAL", 60, Resolution.Daily)
+        #self.AAL_sma = self.SMA("AAL", 60, Resolution.Daily)
+        #self.DAL_sma = self.SMA("DAL", 60, Resolution.Daily)
        
         #indicator warm up period
         self.SetWarmUp(timedelta(days = 60))
-        
-        if self.IsWarmingUp:
-            return
         
         #place trade for HRL 120 min after market opens
         self.Schedule.On(self.DateRules.EveryDay(), self.TimeRules.AfterMarketOpen('HRL', 120), self.daily_check)
 
     def daily_check(self):
-        
-        aal_daily_close = AAL.close
-        dal_daily_close = DAL.close
-        
+        #if indicator isnt ready exit strategy
+        if self.IsWarmingUp:
+            return
+
+        #not sure if this WORKS WILL UPDATE
+        AAL_Price = self.Securities["AAL"].Price
+        DAL_Price = self.Securities["DAL"].Price
+
+        history = self.History(self.Securities.Keys, 365, Resolution.Daily)
+        hrl_daily_close = history.loc['hrl']['close']
+        aal_daily_close = history.loc['aal']['close']
+        dal_daily_close = history.loc['aal']['close']
+
+        #SMA
+        aal_sma = aal_daily_close.rolling(window=60).mean()
+        dal_sma = dal_daily_close.rolling(window=60).mean()
+
+        aal_today_sma = aal_sma[1:61]
+        aal_yesterday_sma = aal_sma[0:60]
+        aal_delta = aal_today_sma-aal_yesterday_sma
+
+        dal_today_sma = dal_sma[1:61]
+        dal_yesterday_sma = dal_sma[0:60]
+        dal_delta = dal_today_sma-dal_yesterday_sma
+
+        sma_ratio = dal_delta-aal_delta
+
         #training the ornstainUhlenbeck method
         data_train = np.array([aal_daily_close], [dal_daily_close])
-        data_oos = np.array([aal_daily_close], [dal_daily_close])
         
         example = ml.OrnsteinUhlenbeck()
         example.fit(data_train, data_frequency="D", discount_rate=0.5, transaction_cost=0, stop_loss=0.5)
         
-        #checks optimal levels
         example.description()
 
-    #entry
+
+        
+        #entry criteria 
         #currPrice less than optimal entry and sma trending upwards
-        if  self.Securities["AAL"].Price < example.optimal_entry_level() and self.smaAAL < self.Securities["AAL"].Price :
-            aal_wt = 
-            dal_wt = 
-            self.SetHoldings("AAL", aal_wt)
-            self.SetHoldings("DAL", -dal_wt)
+        if  self.Securities["AAL"].Price < example.optimal_entry_level() and sma_ratio > 1 :
+            self.SetHoldings("AAL", 0.5)
+            self.SetHoldings("DAL", -0.5)
+            #just to track the trades
+            self.Log('AAL %' + str(round((self.Securities["AAL"].Price * self.Portfolio['AAL'].Quantity)/self.Portfolio.TotalPortfolioValue,4)))
+            self.Log('DAL %' + str(round((self.Securities["DAL"].Price * self.Portfolio['DAL'].Quantity)/self.Portfolio.TotalPortfolioValue,4)))
 
         #currPrice less than optimal entry and sma trending downwards
         elif self.Securities["AAL"].Price < example.optimal_entry_level() and self.smaAAL > self.Securities["AAL"].Price :
-            aal_wt = 
-            dal_wt = 
-            self.SetHoldings("AAL", -aal_wt)
-            self.SetHoldings("DAL", dal_wt)
+            self.SetHoldings("AAL", -0.1)
+            self.SetHoldings("DAL", 0.1)
 
         #currPrice greater than optimal entry and sma trending upwards 
         elif self.Securities["AAL"].Price > example.optimal_entry_level() and self.smaAAL < self.Securities["AAL"].Price :
@@ -64,17 +83,15 @@ class team2(QCAlgorithm):
         elif self.Securities["AAL"].Price > example.optimal_entry_level() and self.smaAAL > self.Securities["AAL"].Price :
             self.SetHoldings("HRL", 0.1)   
 
-    #exit
+        #exit criteria
         #currPrice less than optimal exit and sma trending upwards
-        elif  self.Securities["AAL"].Price < example.optimal_liquidation_level() and self.smaAAL < self.Securities["AAL"].Price :
+        elif self.Securities["AAL"].Price < example.optimal_liquidation_level() and self.smaAAL < self.Securities["AAL"].Price :
             self.SetHoldings("HRL", 0.1)  
 
         #currPrice less than optimal exit and sma trending downwards
         elif self.Securities["AAL"].Price < example.optimal_liquidation_level() and self.smaAAL > self.Securities["AAL"].Price :
-            aal_wt = 
-            dal_wt = 
-            self.SetHoldings("AAL", -aal_wt)
-            self.SetHoldings("DAL", dal_wt)
+            self.SetHoldings("AAL", -0.1)
+            self.SetHoldings("DAL", 0.1)
 
         #currPrice greater than optimal exit and sma trending upwards 
         elif self.Securities["AAL"].Price > example.optimal_liquidation_level() and self.smaAAL < self.Securities["AAL"].Price :
@@ -82,14 +99,9 @@ class team2(QCAlgorithm):
 
         #currPrice greater than optimal exit and sma trending downwards 
         elif self.Securities["AAL"].Price > example.optimal_liquidation_level() and self.smaAAL > self.Securities["AAL"].Price :
-            self.SetHoldings("HRL", 0.1)  
-
-
-       
-        self.Liquidate("HRL")
-        self.Liquidate("AAL")
-        self.Liquidate("DAL")
-       
-        #retrain model
-        example.fit_to_assets(data_oos)
+            self.SetHoldings("HRL", 0.1) 
+        else:
+            self.SetHoldings("HRL", 0.1)
         
+        #retrain model
+        example.fit_to_assets(data_train)

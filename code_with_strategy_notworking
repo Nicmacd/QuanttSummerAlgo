@@ -1,0 +1,126 @@
+from Model import Model
+import numpy as np
+class team2(QCAlgorithm):
+
+    def Initialize(self):
+        self.SetStartDate(2020, 12, 26)  # Set Start Date
+        self.SetCash(100000000)  # Set Strategy Cash
+        #set universe
+        self.HRL = self.AddEquity("HRL", Resolution.Daily)
+        self.AAL = self.AddEquity("AAL", Resolution.Daily)
+        self.DAL = self.AddEquity("DAL", Resolution.Daily)
+        self.SetWarmup(252)
+        self.model = Model()
+        
+        # retrain our model periodically
+        self.Train(self.DateRules.MonthStart('AAL'), self.TimeRules.Midnight, self.TrainModel)
+        
+        #indicator warm up period
+        #self.SetWarmUp(timedelta(days = 1))
+
+        self.Schedule.On(self.DateRules.EveryDay("AAL"), self.TimeRules.AfterMarketOpen("AAL", 10), self.daily_check)
+        
+    def daily_check(self):
+        self.model.Update(self.Time, data[self.AAL].Close, data[self.DAL].Close)
+        
+        self.Debug('here')
+        #if indicator isnt ready exit strategy
+        if self.IsWarmingUp:
+            return
+        
+        self.smaAAL = 1000
+        AAL_Price = self.Securities["AAL"].Price
+        DAL_Price = self.Securities["DAL"].Price
+        history = self.History(self.Securities.Keys, 100, Resolution.Daily)
+        hrl_daily_close = history.loc['hrl']['close']
+        aal_daily_close = history.loc['aal']['close']
+        dal_daily_close = history.loc['aal']['close']
+        #SMA
+        aal_sma = aal_daily_close.rolling(window=60).mean()
+        dal_sma = dal_daily_close.rolling(window=60).mean()
+        
+        aal_today_sma = aal_sma[1:61]
+        aal_yesterday_sma = aal_sma[0:60]
+        aal_delta = aal_today_sma-aal_yesterday_sma
+        
+        dal_today_sma = dal_sma[1:61]
+        dal_yesterday_sma = dal_sma[0:60]
+        dal_delta = dal_today_sma-dal_yesterday_sma
+        
+        sma_ratio = aal_delta-dal_delta
+        
+        #training the ornstainUhlenbeck method
+        #data_train = np.array(aal_daily_close, dal_daily_close)
+        example = 10
+        #example = ml.OrnsteinUhlenbeck()
+        #example.fit(data_train, data_frequency="D", discount_rate=0.5, transaction_cost=0, stop_loss=None)
+        #entry criteria
+        
+        #self.SetHoldings("HRL", -0.01)
+        #currPrice less than optimal entry and sma trending upwards
+        self.Debug(self.Securities["AAL"].Price)
+        if  self.Securities["AAL"].Price < self.Model.optimal_stopping.Entry() and sma_ratio > 1:
+            self.SetHoldings("AAL", -0.5)
+            self.SetHoldings("DAL", -0.5)
+            #just to track the trades
+            self.Log('AAL %' + str(round((self.Securities["AAL"].Price * self.Portfolio['AAL'].Quantity)/self.Portfolio.TotalPortfolioValue,4)))
+            self.Log('DAL %' + str(round((self.Securities["DAL"].Price * self.Portfolio['DAL'].Quantity)/self.Portfolio.TotalPortfolioValue,4)))
+            
+        #currPrice less than optimal entry and sma trending downwards
+        elif self.Securities["AAL"].Price < self.Model.optimal_stopping.Entry() and sma_ratio > 1 :
+            self.SetHoldings("AAL", 0.5)
+            self.SetHoldings("DAL", 0.5)
+            
+        #currPrice greater than optimal entry and sma trending upwards
+        elif self.Securities["AAL"].Price > self.Model.optimal_stopping.Entry() and sma_ratio > 1 :
+            self.SetHoldings("AAL", -0.5)
+            self.SetHoldings("DAL", -0.5)
+            
+        #currPrice greater than optimal entry and sma trending downwards
+        elif self.Securities["AAL"].Price > self.Model.optimal_stopping.Entry() and sma_ratio > 1 :
+            self.SetHoldings("AAL", 0.5)
+            self.SetHoldings("DAL", 0.5)
+            
+        #exit criteria
+        #currPrice less than optimal exit and sma trending upwards
+        elif self.Securities["AAL"].Price < self.Model.optimal_stopping.Exit() and sma_ratio > 1 :
+            self.SetHoldings("AAL", -0.5)
+            self.SetHoldings("DAL", -0.5)
+            
+        #currPrice less than optimal exit and sma trending downwards
+        #elif self.Securities["AAL"].Price < example and self.smaAAL > AAL_Price :
+            #self.SetHoldings("AAL", 0.5)
+            #self.SetHoldings("DAL", 0.5)
+            
+        #currPrice greater than optimal exit and sma trending upwards
+        elif self.Securities["AAL"].Price > self.Model.optimal_stopping.Exit() and sma_ratio > 1 :
+            self.SetHoldings("AAL", 0.5)
+            self.SetHoldings("DAL", 0.5)
+            
+        #currPrice greater than optimal exit and sma trending downwards
+        elif self.Securities["AAL"].Price > self.Model.optimal_stopping.Exit() and sma_ratio > 1 :
+            self.SetHoldings("AAL", -0.5)
+            self.SetHoldings("DAL", -0.5)
+        #else:
+           # self.SetHoldings("HRL", 0.01)
+        #retrain model
+    
+    def on_data(self, data):
+        pass
+    
+    
+    def TrainModel(self):
+        if not self.model.Ready2Train:
+            return
+        
+        # retrain quarterly
+        if self.Time.month % 3 != 1:
+            return
+        
+        self.model.Train()
+        
+        if not self.model.IsReady:
+            self.Liquidate()
+            return
+            
+        self.Log(self.model)
